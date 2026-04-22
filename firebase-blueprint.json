@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student Profile",
+      "description": "Basic information of the student conducting research",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string" },
+        "nim": { "type": "string" },
+        "researchTitle": { "type": "string" },
+        "researchField": { "type": "string" },
+        "background": { "type": "string" },
+        "universityName": { "type": "string" },
+        "programmingLanguage": { "type": "string" },
+        "databaseUsed": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fullName", "nim", "researchTitle"]
+    },
+    "GuidanceRecord": {
+      "title": "Guidance Record",
+      "description": "Details of a specific guidance session",
+      "type": "object",
+      "properties": {
+        "studentNim": { "type": "string" },
+        "studentFullName": { "type": "string" },
+        "sessionDate": { "type": "string", "format": "date-time" },
+        "progressDetail": { "type": "string" },
+        "notes": { "type": "string" },
+        "adminFeedback": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "reviewed"] },
+        "attachmentName": { "type": "string" },
+        "attachmentUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentNim", "sessionDate", "progressDetail"]
+    },
+    "Schedule": {
+      "title": "Consultation Schedule",
+      "description": "Planned consultation dates",
+      "type": "object",
+      "properties": {
+        "studentNim": { "type": "string" },
+        "title": { "type": "string" },
+        "start": { "type": "string", "format": "date-time" },
+        "end": { "type": "string", "format": "date-time" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentNim", "title", "start", "end"]
+    },
+    "MeetingSession": {
+      "title": "Guidance Meeting Session",
+      "description": "Details for one of the 8 guidance meeting sessions",
+      "type": "object",
+      "properties": {
+        "studentNim": { "type": "string" },
+        "sessionNumber": { "type": "number" },
+        "status": { "type": "string", "enum": ["not_started", "pending", "revision", "approved"] },
+        "lastFeedback": { "type": "string" },
+        "lastAttachmentName": { "type": "string" },
+        "history": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      },
+      "required": ["studentNim", "sessionNumber", "status"]
+    }
+  },
+  "firestore": {
+    "/students/{nim}": {
+      "schema": "Student",
+      "description": "Collection of student profiles identified by NIM"
+    },
+    "/guidance_records/{recordId}": {
+      "schema": "GuidanceRecord",
+      "description": "Detailed log of each guidance session"
+    },
+    "/schedules/{scheduleId}": {
+      "schema": "Schedule",
+      "description": "Consultation schedule for the calendar"
+    },
+    "/meeting_sessions/{sessionId}": {
+      "schema": "MeetingSession",
+      "description": "Information about the 8 required guidance meetings"
+    }
+  }
+}
