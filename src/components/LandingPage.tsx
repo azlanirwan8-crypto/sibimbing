@@ -109,7 +109,7 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
             </div>
             <h2 className="text-3xl font-bold mb-4 tracking-tight leading-tight">SiBimbing</h2>
             <p className="text-indigo-100 text-lg">
-              Solusi cerdas pencatatan bimbingan tugas akhir & skripsi mahasiswa.
+              Solusi cerdas pencatatan bimbingan tugas akhir & dokumen mahasiswa.
             </p>
           </div>
           

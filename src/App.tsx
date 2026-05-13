@@ -142,14 +142,14 @@ export default function App() {
       />
       <NavItem 
         icon={<FileText size={20} />} 
-        label="Review Judul" 
+        label="Review Pengajuan Judul" 
         active={activeView === 'proposals_review'} 
         onClick={() => setActiveView('proposals_review')}
         collapsed={!isSidebarOpen}
       />
       <NavItem 
         icon={<CalendarIcon size={20} />} 
-        label="Review Bimbingan" 
+        label="Review Sesi Bimbingan" 
         active={activeView === 'sessions_review'} 
         onClick={() => setActiveView('sessions_review')}
         collapsed={!isSidebarOpen}
@@ -176,7 +176,7 @@ export default function App() {
       />
       <NavItem 
         icon={<CalendarIcon size={20} />} 
-        label="Bimbingan" 
+        label="Sesi Bimbingan" 
         active={activeView === 'sessions'} 
         onClick={() => {
           if (proposalStatus !== 'reviewed') {
@@ -205,7 +205,7 @@ export default function App() {
       switch (activeView) {
         case 'proposals': return <GuidanceList nim={nim} />;
         case 'sessions': return <GuidanceSessions nim={nim} />;
-        default: return <Dashboard nim={nim} />;
+        default: return <Dashboard nim={nim} setActiveView={setActiveView} />;
       }
     }
   };

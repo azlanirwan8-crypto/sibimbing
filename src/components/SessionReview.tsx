@@ -18,8 +18,23 @@ export default function SessionReview() {
   const fetchStudents = async () => {
     setIsLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'students'), orderBy('fullName', 'asc')));
-      setStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const snap = await getDocs(collection(db, 'students'));
+      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Sort in-memory: 
+      // 1. Pending sessions first
+      // 2. Then by lastGuidanceAt (most recent first)
+      // 3. Fallback to createdAt
+      const sorted = data.sort((a, b) => {
+        if (a.hasPendingSession && !b.hasPendingSession) return -1;
+        if (!a.hasPendingSession && b.hasPendingSession) return 1;
+        
+        const timeA = new Date(a.lastGuidanceAt || a.createdAt || 0).getTime();
+        const timeB = new Date(b.lastGuidanceAt || b.createdAt || 0).getTime();
+        return timeB - timeA;
+      });
+      
+      setStudents(sorted);
     } catch (error) {
       toast.error("Gagal memuat data mahasiswa");
     } finally {
@@ -103,9 +118,14 @@ export default function SessionReview() {
                       <img src={s.photoUrl} alt="" className="w-full h-full object-cover" />
                     ) : <User size={20} />}
                   </div>
-                  <div className="text-left">
+                  <div className="text-left relative">
                     <p className="text-sm font-bold text-slate-800 truncate max-w-[150px] italic">{s.fullName}</p>
                     <p className="text-[10px] text-slate-400 font-bold uppercase">{s.nim}</p>
+                    {s.hasPendingSession && (
+                      <div className="absolute -top-1 -right-4 flex items-center gap-1 bg-orange-100 text-orange-600 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase animate-bounce">
+                        New
+                      </div>
+                    )}
                   </div>
                 </div>
                 <ChevronRight size={16} className="text-slate-300 group-hover:text-indigo-600 transition-colors" />

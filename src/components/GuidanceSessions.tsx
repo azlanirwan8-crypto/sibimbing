@@ -27,7 +27,10 @@ import {
   Plus,
   ChevronDown,
   ChevronUp,
-  User
+  User,
+  Link as LinkIcon,
+  Eye,
+  Send
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
@@ -56,12 +59,14 @@ export default function GuidanceSessions({ nim, isAdmin = false }: GuidanceSessi
   const [uploadLoading, setUploadLoading] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [attachmentName, setAttachmentName] = useState('');
+  const [docLink, setDocLink] = useState('');
 
   // Admin states
   const [adminFeedback, setAdminFeedback] = useState('');
   const [adminStatus, setAdminStatus] = useState<'revision' | 'approved'>('approved');
   const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
   const [attachmentData, setAttachmentData] = useState<string | null>(null);
+  const [viewingFile, setViewingFile] = useState<{ name: string, data: string } | null>(null);
 
   useEffect(() => {
     const fetchStudentPhoto = async () => {
@@ -125,9 +130,18 @@ export default function GuidanceSessions({ nim, isAdmin = false }: GuidanceSessi
     document.body.removeChild(link);
   };
 
+  const handlePreview = (fileName: string, base64: string) => {
+    setViewingFile({ name: fileName, data: base64 });
+  };
+
   const handleUpload = async (sessionNumber: number) => {
-    if (!attachmentName || !notes || !attachmentData) {
-      toast.error("Harap isi deskripsi dan pilih file");
+    if (!notes) {
+      toast.error("Harap isi deskripsi progress");
+      return;
+    }
+
+    if (!attachmentName && !docLink) {
+      toast.error("Harap pilih berkas atau masukkan tautan dokumen");
       return;
     }
 
@@ -141,7 +155,8 @@ export default function GuidanceSessions({ nim, isAdmin = false }: GuidanceSessi
         timestamp: new Date().toISOString(),
         notes,
         attachmentName,
-        attachmentData // Base64
+        attachmentData, // Base64
+        docLink // Google Docs/Drive link
       };
 
       const existingHistory = sessionSnap.exists() ? sessionSnap.data().history || [] : [];
@@ -150,17 +165,24 @@ export default function GuidanceSessions({ nim, isAdmin = false }: GuidanceSessi
         studentNim: nim,
         sessionNumber,
         status: 'pending',
-        lastAttachmentName: attachmentName,
+        lastAttachmentName: attachmentName || 'Tautan Dokumen',
         lastFeedback: '', // Clear old feedback when student uploads new revision
         history: [...existingHistory, newHistoryItem]
       };
 
       await setDoc(sessionRef, sessionData, { merge: true });
       
-      toast.success(`Progress pertemuan ${sessionNumber} berhasil dikirim!`);
+      // Update student's last activity and pending status
+      await updateDoc(doc(db, 'students', nim), {
+        lastGuidanceAt: new Date().toISOString(),
+        hasPendingSession: true
+      });
+      
+      toast.success(`Progress sesi bimbingan ${sessionNumber} berhasil dikirim!`);
       setNotes('');
       setAttachmentName('');
       setAttachmentData(null);
+      setDocLink('');
       setExpandedSession(null);
     } catch (error) {
       console.error(error);
@@ -195,6 +217,19 @@ export default function GuidanceSessions({ nim, isAdmin = false }: GuidanceSessi
         lastFeedback: adminFeedback,
         history: [...existingHistory, newHistoryItem]
       });
+
+      // Check if there are any other pending sessions for this student
+      const pendingSnap = await getDocs(query(
+        collection(db, 'meeting_sessions'), 
+        where('studentNim', '==', nim), 
+        where('status', '==', 'pending')
+      ));
+      
+      if (pendingSnap.empty) {
+        await updateDoc(doc(db, 'students', nim), {
+          hasPendingSession: false
+        });
+      }
       
       toast.success(`Review pertemuan ${sessionNumber} berhasil disimpan!`);
       setAdminFeedback('');
@@ -215,8 +250,39 @@ export default function GuidanceSessions({ nim, isAdmin = false }: GuidanceSessi
     );
   }
 
+  const approvedCount = sessions.filter(s => s.status === 'approved').length;
+  const isCompleted = approvedCount >= 8;
+
   return (
     <div className="space-y-6">
+      <AnimatePresence>
+        {isCompleted && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-slate-900 rounded-[2rem] p-8 text-white relative overflow-hidden shadow-2xl shadow-indigo-100"
+          >
+            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="text-center md:text-left">
+                <div className="inline-flex items-center gap-2 bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full text-[10px] font-black uppercase italic tracking-widest mb-3">
+                  <CheckCircle2 size={12} /> Bimbingan Selesai
+                </div>
+                <h3 className="text-2xl font-black italic tracking-tight mb-2">Selamat! Anda Telah Menyelesaikan 8 Sesi.</h3>
+                <p className="text-sm text-slate-400 font-medium italic opacity-80">Seluruh sesi telah divalidasi pembimbing. Silakan unduh laporan bimbingan akhir Anda.</p>
+              </div>
+              <button 
+                onClick={() => toast.info("Menunggu Template", { description: "Hubungi Admin/Sistem Analis untuk upload template laporan institusi." })}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-2xl text-xs font-black uppercase italic tracking-widest shadow-xl shadow-indigo-500/20 transition-all flex items-center gap-3 shrink-0"
+              >
+                <FileDown size={18} /> Cetak Laporan PDF
+              </button>
+            </div>
+            <div className="absolute top-0 right-0 p-8 opacity-10 bg-indigo-500 w-40 h-40 rounded-full blur-3xl translate-x-10 -translate-y-10" />
+            <div className="absolute bottom-0 left-0 p-8 opacity-10 bg-emerald-500 w-40 h-40 rounded-full blur-3xl -translate-x-10 translate-y-10" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {sessions.map((session, idx) => {
           const isLockedBySequence = session.sessionNumber > 1 && sessions[session.sessionNumber - 2].status !== 'approved';
@@ -257,12 +323,12 @@ export default function GuidanceSessions({ nim, isAdmin = false }: GuidanceSessi
                   {isLockedBySequence ? <Clock size={20} /> : session.status === 'approved' ? <CheckCircle2 size={24} /> : <span className="font-black text-lg">0{session.sessionNumber}</span>}
                 </div>
                 <div>
-                  <h4 className="font-bold text-slate-800 tracking-tight italic">Pertemuan {session.sessionNumber}</h4>
+                  <h4 className="font-bold text-slate-800 tracking-tight italic">Sesi Bimbingan {session.sessionNumber}</h4>
                   <div className="flex items-center gap-1.5">
                     {isLockedBySequence ? <span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">Terkunci</span> : (
                       <>
-                        {session.status === 'not_started' && <span className="text-[10px] text-slate-400 uppercase font-black">Belum Mulai</span>}
-                        {session.status === 'pending' && <span className="text-[10px] text-orange-500 uppercase font-black font-black animate-pulse">Menunggu Review</span>}
+                        {session.status === 'not_started' && <span className="text-[10px] text-slate-400 uppercase font-black">Belum Dimulai</span>}
+                        {session.status === 'pending' && <span className="text-[10px] text-orange-500 uppercase font-black animate-pulse">Menunggu Review</span>}
                         {session.status === 'revision' && <span className="text-[10px] text-pink-500 uppercase font-black">Perlu Revisi</span>}
                         {session.status === 'approved' && <span className="text-[10px] text-emerald-500 uppercase font-black">Disetujui / Lanjut</span>}
                       </>
@@ -306,20 +372,41 @@ export default function GuidanceSessions({ nim, isAdmin = false }: GuidanceSessi
                                  {i === 0 && <span className="text-[8px] bg-indigo-600 text-white px-1.5 py-0.5 rounded italic font-black uppercase tracking-tighter">Terbaru</span>}
                                </div>
                                <p className="font-bold text-slate-700 italic leading-relaxed">{h.notes || h.feedback}</p>
-                               {h.attachmentName && (
-                                 <button 
-                                   onClick={() => h.attachmentData && handleDownload(h.attachmentName, h.attachmentData)}
-                                   className={cn(
-                                     "flex items-center gap-1 mt-3 font-bold transition-all p-1.5 rounded-lg border",
-                                     h.type === 'admin_feedback' ? "ml-auto bg-slate-100 border-slate-200 text-slate-600" : "bg-indigo-100 border-indigo-200 text-indigo-600",
-                                     !h.attachmentData && "opacity-50 cursor-not-allowed"
-                                   )}
-                                 >
-                                   <Paperclip size={10} />
-                                   <span className="truncate max-w-[200px] border-b border-current pb-0.5">{h.attachmentName}</span>
-                                   <FileDown size={10} className="ml-1" />
-                                 </button>
-                               )}
+                               <div className="flex flex-wrap items-center gap-2 mt-3 font-bold">
+                                 {h.attachmentName && (
+                                   <>
+                                     <button 
+                                       onClick={() => h.attachmentData && handlePreview(h.attachmentName, h.attachmentData)}
+                                       className={cn(
+                                         "flex items-center gap-1 transition-all p-1.5 rounded-lg border text-[10px] uppercase",
+                                         h.type === 'admin_feedback' ? "bg-slate-100 border-slate-200 text-indigo-600" : "bg-white border-indigo-200 text-indigo-600",
+                                         !h.attachmentData && "opacity-50 cursor-not-allowed"
+                                       )}
+                                     >
+                                       <Eye size={12} />
+                                       <span className="truncate max-w-[100px]">Pratinjau</span>
+                                     </button>
+                                     <button 
+                                       onClick={() => h.attachmentData && handleDownload(h.attachmentName, h.attachmentData)}
+                                       className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-indigo-600 transition-colors"
+                                       title="Unduh Berkas"
+                                     >
+                                       <FileDown size={14} />
+                                     </button>
+                                   </>
+                                 )}
+                                 {h.docLink && (
+                                   <a 
+                                     href={h.docLink}
+                                     target="_blank"
+                                     rel="noreferrer"
+                                     className="flex items-center gap-1.5 bg-indigo-600 text-white px-2.5 py-1.5 rounded-lg text-[10px] uppercase shadow-sm hover:bg-indigo-700 transition-all"
+                                   >
+                                     <LinkIcon size={12} />
+                                     Buka Tautan
+                                   </a>
+                                 )}
+                               </div>
                             </div>
                             {h.type === 'admin_feedback' && (
                               <div className="w-8 h-8 rounded-full bg-slate-100 flex-shrink-0 flex items-center justify-center border border-slate-200">
@@ -334,63 +421,112 @@ export default function GuidanceSessions({ nim, isAdmin = false }: GuidanceSessi
                     {!isAdmin ? (
                       // Student Form
                       session.status !== 'approved' && (
-                        <div className="space-y-4 pt-4 border-t border-slate-100">
-                          <h5 className="text-xs font-black text-slate-400 uppercase italic mb-2">Kirim Progres Revisi</h5>
-                          <textarea 
-                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs focus:ring-2 focus:ring-indigo-500 outline-none transition-all italic min-h-[60px]"
-                            placeholder="Deskripsikan revisi atau progres Anda..."
-                            value={notes}
-                            onChange={(e) => setNotes(e.target.value)}
-                          />
-                          <div className="flex items-center gap-3">
-                            <label className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-2 cursor-pointer hover:bg-slate-100 transition-colors">
-                              <Upload size={14} className="text-indigo-600" />
-                              <span className="text-[10px] text-slate-400 truncate font-bold uppercase italic">
-                                {attachmentName || (session.sessionNumber === 8 ? 'Upload Bukti Bimbingan' : 'Upload Berkas Revisi')}
-                              </span>
-                              <input 
-                                type="file" 
-                                className="hidden" 
-                                onChange={handleFileChange}
-                              />
-                            </label>
-                            <button 
-                              onClick={() => handleUpload(session.sessionNumber)}
-                              disabled={uploadLoading === session.sessionNumber}
-                              className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-indigo-100 hover:shadow-indigo-200 transition-all flex items-center gap-2"
-                            >
-                              {uploadLoading === session.sessionNumber ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                              KIRIM
-                            </button>
+                        <div className="space-y-4 pt-6 border-t border-slate-100">
+                          <div className="flex items-center justify-between mb-2">
+                             <h5 className="text-[10px] font-black text-slate-400 uppercase italic tracking-widest">Kirim Progres Bimbingan</h5>
+                             <span className="text-[9px] font-bold text-slate-300 italic">Sesi {session.sessionNumber}</span>
                           </div>
+                          
+                          <div className="space-y-3">
+                            <div className="space-y-1">
+                              <label className="text-[8px] font-black text-slate-400 uppercase italic ml-1 tracking-tighter">Deskripsi Progress / Catatan</label>
+                              <textarea 
+                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs focus:ring-2 focus:ring-indigo-500 outline-none transition-all italic min-h-[80px] font-medium"
+                                placeholder="Jelaskan apa saja yang sudah dikerjakan atau direvisi..."
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                               <div className="space-y-1">
+                                 <label className="text-[8px] font-black text-slate-400 uppercase italic ml-1 tracking-tighter">Lampiran Berkas (Opsional)</label>
+                                 <label className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-2 cursor-pointer hover:bg-slate-50 transition-all border-dashed">
+                                   <Upload size={14} className="text-indigo-600" />
+                                   <span className="text-[9px] text-slate-400 truncate font-bold uppercase italic flex-1">
+                                     {attachmentName || 'Pilih Berkas PDF/Docx'}
+                                   </span>
+                                   {attachmentName && (
+                                     <button 
+                                       type="button"
+                                       onClick={(e) => {
+                                         e.preventDefault();
+                                         e.stopPropagation();
+                                         setAttachmentName('');
+                                         setAttachmentData(null);
+                                       }}
+                                       className="p-1 hover:bg-slate-200 rounded-full text-slate-400"
+                                     >
+                                       <X size={12} />
+                                     </button>
+                                   )}
+                                   <input 
+                                     type="file" 
+                                     className="hidden" 
+                                     onChange={handleFileChange}
+                                   />
+                                 </label>
+                               </div>
+                               <div className="space-y-1">
+                                 <label className="text-[8px] font-black text-slate-400 uppercase italic ml-1 tracking-tighter">Tautan Dokumen (Google Drive/Docs)</label>
+                                 <div className="relative">
+                                    <LinkIcon size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input 
+                                      type="url"
+                                      className="w-full bg-white border border-slate-200 rounded-xl py-2 pl-8 pr-3 text-[10px] focus:ring-2 focus:ring-indigo-500 outline-none transition-all italic font-bold"
+                                      placeholder="https://docs.google.com/..."
+                                      value={docLink}
+                                      onChange={(e) => setDocLink(e.target.value)}
+                                    />
+                                 </div>
+                               </div>
+                            </div>
+                          </div>
+
+                          <button 
+                            onClick={() => handleUpload(session.sessionNumber)}
+                            disabled={uploadLoading === session.sessionNumber}
+                            className="w-full bg-slate-900 text-white py-3 rounded-2xl text-xs font-black shadow-xl shadow-slate-200 hover:bg-indigo-600 transition-all flex items-center justify-center gap-2 uppercase italic tracking-widest"
+                          >
+                            {uploadLoading === session.sessionNumber ? (
+                              <Loader2 size={16} className="animate-spin" />
+                            ) : (
+                              <>
+                                <Send size={14} />
+                                Kirim Progres Sesi {session.sessionNumber}
+                              </>
+                            )}
+                          </button>
                         </div>
                       )
                     ) : (
                       // Admin Review Form
                       session.status === 'pending' && (
-                        <div className="space-y-4 pt-4 border-t border-slate-100">
-                          <h5 className="text-xs font-black text-indigo-600 uppercase italic mb-2">Berikan Review Admin</h5>
+                        <div className="space-y-4 pt-6 border-t border-slate-200">
+                          <h5 className="text-[10px] font-black text-indigo-600 uppercase italic mb-2 tracking-[0.2em] flex items-center gap-2">
+                             <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-ping" /> Review Pembimbing
+                          </h5>
                           <textarea 
-                            className="w-full bg-indigo-50/50 border border-indigo-100 rounded-2xl p-3 text-xs focus:ring-2 focus:ring-indigo-500 outline-none transition-all italic min-h-[60px]"
-                            placeholder="Ketik feedback Anda di sini..."
+                            className="w-full bg-indigo-50 border-2 border-indigo-100 rounded-2xl p-4 text-xs focus:ring-2 focus:ring-indigo-500 outline-none transition-all italic min-h-[100px] font-bold text-slate-800"
+                            placeholder="Ketik umpan balik bimbingan di sini..."
                             value={adminFeedback}
                             onChange={(e) => setAdminFeedback(e.target.value)}
                           />
                           <div className="flex items-center gap-3">
                             <select 
-                              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold uppercase italic outline-none"
+                              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-3 text-[10px] font-black uppercase italic outline-none cursor-pointer"
                               value={adminStatus}
                               onChange={(e) => setAdminStatus(e.target.value as any)}
                             >
-                              <option value="approved">LANJUT (Disetujui)</option>
-                              <option value="revision">REVISI ULANG</option>
+                              <option value="approved">DISETUJUI / LANJUT SESI BERIKUTNYA</option>
+                              <option value="revision">REVISI / ULANGI SESI INI</option>
                             </select>
                             <button 
                               onClick={() => handleAdminReview(session.sessionNumber)}
                               disabled={uploadLoading === session.sessionNumber}
-                              className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase shadow-lg shadow-indigo-100 transition-all"
+                              className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase italic shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
                             >
-                              {uploadLoading === session.sessionNumber ? <Loader2 size={14} className="animate-spin" /> : 'Selesai Review'}
+                              {uploadLoading === session.sessionNumber ? <Loader2 size={16} className="animate-spin" /> : 'Simpan Review'}
                             </button>
                           </div>
                         </div>
@@ -414,6 +550,70 @@ export default function GuidanceSessions({ nim, isAdmin = false }: GuidanceSessi
           );
         })}
       </div>
+
+      {/* DOCUMENT PREVIEW MODAL */}
+      <AnimatePresence>
+        {viewingFile && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setViewingFile(null)}
+              className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl w-full max-w-5xl h-[85vh] relative z-10 flex flex-col shadow-2xl overflow-hidden"
+            >
+              <div className="p-4 border-b flex items-center justify-between bg-slate-50">
+                <div className="flex items-center gap-3">
+                  <FileDown className="text-indigo-600" />
+                  <h3 className="font-bold text-slate-800 italic truncate max-w-[200px] md:max-w-md">{viewingFile.name}</h3>
+                </div>
+                <button 
+                  onClick={() => setViewingFile(null)}
+                  className="p-2 hover:bg-slate-200 rounded-full transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 bg-slate-200 relative overflow-auto flex items-center justify-center">
+                {viewingFile.data.includes('image') ? (
+                  <img src={viewingFile.data} alt="Preview" className="max-w-full max-h-full object-contain" />
+                ) : viewingFile.data.includes('pdf') || viewingFile.data.includes('application/msword') || viewingFile.data.includes('wordprocessingml') ? (
+                  <iframe 
+                    src={viewingFile.data} 
+                    className="w-full h-full border-none"
+                    title="Document Preview"
+                  />
+                ) : (
+                  <div className="text-center p-8">
+                    <AlertCircle size={48} className="mx-auto text-slate-400 mb-4" />
+                    <p className="text-slate-600 font-bold italic">Preview tidak tersedia untuk format ini.</p>
+                    <button 
+                       onClick={() => handleDownload(viewingFile.name, viewingFile.data)}
+                       className="mt-4 text-indigo-600 font-bold hover:underline"
+                    >
+                      Klik di sini untuk mengunduh
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="p-4 bg-white border-t flex justify-end">
+                 <button 
+                  onClick={() => handleDownload(viewingFile.name, viewingFile.data)}
+                  className="bg-indigo-600 text-white px-6 py-2 rounded-xl text-xs font-black italic shadow-lg shadow-indigo-100 flex items-center gap-2"
+                 >
+                   <Paperclip size={14} /> DOWNLOAD DOKUMEN
+                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

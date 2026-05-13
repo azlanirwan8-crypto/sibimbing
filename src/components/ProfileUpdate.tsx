@@ -12,9 +12,10 @@ interface ProfileUpdateProps {
   onCancel?: () => void;
   isModal?: boolean;
   onlyPassword?: boolean;
+  isAdmin?: boolean;
 }
 
-export default function ProfileUpdate({ nim, onComplete, onCancel, isModal = false, onlyPassword = false }: ProfileUpdateProps) {
+export default function ProfileUpdate({ nim, onComplete, onCancel, isModal = false, onlyPassword = false, isAdmin = false }: ProfileUpdateProps) {
   const [formData, setFormData] = useState({
     fullName: '',
     phoneNumber: '',
@@ -25,6 +26,7 @@ export default function ProfileUpdate({ nim, onComplete, onCancel, isModal = fal
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
   const [preview, setPreview] = useState<string | null>(null);
+  const [stats, setStats] = useState({ approved: 0, total: 0 });
 
   useEffect(() => {
     fetchExistingData();
@@ -43,6 +45,13 @@ export default function ProfileUpdate({ nim, onComplete, onCancel, isModal = fal
         }));
         if (data.photoUrl) setPreview(data.photoUrl);
       }
+
+      // Fetch Progress Stats
+      const { collection, query, where, getDocs } = await import('firebase/firestore');
+      const q = query(collection(db, 'meeting_sessions'), where('studentNim', '==', nim));
+      const snap = await getDocs(q);
+      const approved = snap.docs.filter(d => d.data().status === 'approved').length;
+      setStats({ approved, total: snap.size });
     } catch (error) {
       console.error("Error fetching student data:", error);
     } finally {
@@ -64,7 +73,7 @@ export default function ProfileUpdate({ nim, onComplete, onCancel, isModal = fal
     }
 
     // Password only required if not already set or specifically being changed
-    if (!formData.password && !isModal) {
+    if (!formData.password && !isModal && !isAdmin) {
       toast.error("Password wajib diisi");
       return;
     }
@@ -88,11 +97,11 @@ export default function ProfileUpdate({ nim, onComplete, onCancel, isModal = fal
 
       await setDoc(doc(db, 'students', nim), updateData, { merge: true });
       
-      toast.success(onlyPassword ? "Password berhasil diperbarui!" : "Biodata berhasil diperbarui!");
+      toast.success(onlyPassword ? "Password berhasil diperbarui!" : "Profil mahasiswa berhasil diperbarui!");
       onComplete();
     } catch (error) {
       console.error("Profile update error:", error);
-      toast.error("Gagal melakukan pembaruan. Pastikan ukuran foto tidak terlalu besar.");
+      toast.error("Gagal melakukan pembaruan.");
     } finally {
       setIsLoading(false);
     }
@@ -130,12 +139,31 @@ export default function ProfileUpdate({ nim, onComplete, onCancel, isModal = fal
             </div>
           )}
           <h2 className="text-2xl font-black text-slate-800 tracking-tight italic">
-            {onlyPassword ? 'Reset Password Mahasiswa' : isModal ? 'Update Biodata Mahasiswa' : 'Lengkapi Biodata Mahasiswa'}
+            {onlyPassword ? 'Reset Password Mahasiswa' : isAdmin ? 'Kelola Profil Mahasiswa' : isModal ? 'Update Biodata Mahasiswa' : 'Lengkapi Biodata Mahasiswa'}
           </h2>
           <p className="text-slate-500 mt-2 italic shadow-sm bg-slate-50 py-1 px-4 rounded-full inline-block">
-            {onlyPassword ? `NIM: ${nim} - ${formData.fullName}` : isModal ? 'Kelola informasi profil dan keamanan akun Anda.' : 'Silakan isi data diri Anda untuk pertama kali sebelum melanjutkan.'}
+            {`NIM: ${nim} - ${formData.fullName}`}
           </p>
         </div>
+
+        {isAdmin && !onlyPassword && (
+          <div className="mb-10 grid grid-cols-1 md:grid-cols-3 gap-4">
+             <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 flex flex-col items-center justify-center">
+                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest italic mb-1">Approved Sessions</p>
+                <p className="text-2xl font-black text-emerald-700 italic">{stats.approved} <span className="text-xs font-bold text-emerald-400">/ 8</span></p>
+             </div>
+             <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 flex flex-col items-center justify-center">
+                <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest italic mb-1">Total Submission</p>
+                <p className="text-2xl font-black text-indigo-700 italic">{stats.total}</p>
+             </div>
+             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col items-center justify-center">
+                <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest italic mb-1">Status Progres</p>
+                <div className="w-full bg-slate-200 h-2 rounded-full mt-2 overflow-hidden">
+                   <div className="bg-emerald-500 h-full" style={{ width: `${Math.min((stats.approved / 8) * 100, 100)}%` }} />
+                </div>
+             </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {!onlyPassword && (
@@ -178,67 +206,74 @@ export default function ProfileUpdate({ nim, onComplete, onCancel, isModal = fal
           )}
 
           {!onlyPassword && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-500 uppercase ml-1 italic tracking-widest">Nama Lengkap</label>
-                <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input 
-                    required
-                    type="text" 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 pl-12 pr-4 focus:ring-2 focus:ring-indigo-500 outline-none transition-all italic text-sm"
-                    placeholder="Masukkan nama lengkap..."
-                    value={formData.fullName}
-                    onChange={(e) => setFormData({...formData, fullName: e.target.value})}
-                  />
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase ml-1 italic tracking-widest">Nama Lengkap</label>
+                  <div className="relative">
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input 
+                      required
+                      type="text" 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 pl-12 pr-4 focus:ring-2 focus:ring-indigo-500 outline-none transition-all italic text-sm"
+                      placeholder="Masukkan nama lengkap..."
+                      value={formData.fullName}
+                      onChange={(e) => setFormData({...formData, fullName: e.target.value})}
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-500 uppercase ml-1 italic tracking-widest">Nomor WA / HP</label>
-                <div className="relative">
-                  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input 
-                    required
-                    type="tel" 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 pl-12 pr-4 focus:ring-2 focus:ring-indigo-500 outline-none transition-all italic text-sm"
-                    placeholder="Contoh: 081234567..."
-                    value={formData.phoneNumber}
-                    onChange={(e) => setFormData({...formData, phoneNumber: e.target.value})}
-                  />
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase ml-1 italic tracking-widest">Nomor WA / HP</label>
+                  <div className="relative">
+                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input 
+                      required
+                      type="tel" 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 pl-12 pr-4 focus:ring-2 focus:ring-indigo-500 outline-none transition-all italic text-sm"
+                      placeholder="Contoh: 081234567..."
+                      value={formData.phoneNumber}
+                      onChange={(e) => setFormData({...formData, phoneNumber: e.target.value})}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          <div className={cn("grid grid-cols-1 gap-6 pt-2", !onlyPassword && "md:grid-cols-2")}>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-500 uppercase ml-1 italic tracking-widest">Password Baru</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input 
-                  required
-                  type="password" 
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 pl-12 pr-4 focus:ring-2 focus:ring-indigo-500 outline-none transition-all italic text-sm"
-                  placeholder="Buat password baru..."
-                  value={formData.password}
-                  onChange={(e) => setFormData({...formData, password: e.target.value})}
-                />
+          <div className="border-t border-slate-100 pt-6">
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] italic mb-4">Pengaturan Keamanan Akun</h4>
+            <div className={cn("grid grid-cols-1 gap-6", !onlyPassword && "md:grid-cols-2")}>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-500 uppercase ml-1 italic tracking-widest">
+                  {isAdmin ? 'Reset Password (Opsional)' : 'Password Baru'}
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input 
+                    required={!isAdmin}
+                    type="password" 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 pl-12 pr-4 focus:ring-2 focus:ring-indigo-500 outline-none transition-all italic text-sm"
+                    placeholder="Buat password baru..."
+                    value={formData.password}
+                    onChange={(e) => setFormData({...formData, password: e.target.value})}
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-500 uppercase ml-1 italic tracking-widest">Konfirmasi Password</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input 
-                  required
-                  type="password" 
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 pl-12 pr-4 focus:ring-2 focus:ring-indigo-500 outline-none transition-all italic text-sm"
-                  placeholder="Ulangi password..."
-                  value={formData.confirmPassword}
-                  onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-                />
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-500 uppercase ml-1 italic tracking-widest">Konfirmasi Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input 
+                    required={!!formData.password}
+                    type="password" 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 pl-12 pr-4 focus:ring-2 focus:ring-indigo-500 outline-none transition-all italic text-sm"
+                    placeholder="Ulangi password..."
+                    value={formData.confirmPassword}
+                    onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -246,9 +281,9 @@ export default function ProfileUpdate({ nim, onComplete, onCancel, isModal = fal
           <button 
             type="submit"
             disabled={isLoading}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 flex items-center justify-center gap-2 transition-all active:scale-[0.98] mt-6 italic"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-indigo-100 flex items-center justify-center gap-2 transition-all active:scale-[0.98] mt-8 italic"
           >
-            {isLoading ? <Loader2 className="animate-spin" /> : <><Save size={20} /> {onlyPassword ? 'SIMPAN PASSWORD BARU' : 'SIMPAN BIODATA & LANJUT'}</>}
+            {isLoading ? <Loader2 className="animate-spin" /> : <><Save size={20} /> {onlyPassword ? 'SIMPAN PASSWORD BARU' : isAdmin ? 'PERBARUI PROFIL LENGKAP' : 'SIMPAN BIODATA & LANJUT'}</>}
           </button>
         </form>
       </motion.div>

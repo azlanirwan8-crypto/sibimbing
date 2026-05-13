@@ -108,13 +108,17 @@ export default function AdminDashboard() {
       const pendingQuery = query(collection(db, 'guidance_records'), where('status', '==', 'pending'));
       const pendingSnap = await getDocs(pendingQuery);
 
-      const scheduleSnap = await getCountFromServer(collection(db, 'schedules'));
+      // Count pending expert sessions (the 8 session track)
+      const pendingSessionsQuery = query(collection(db, 'meeting_sessions'), where('status', '==', 'pending'));
+      const pendingSessionsSnap = await getDocs(pendingSessionsQuery);
+
+      const totalPending = pendingSnap.size + pendingSessionsSnap.size;
 
       setStats({
         totalStudents: studentSnap.data().count,
         totalGuidance: guidanceSnap.data().count,
-        pendingReviews: pendingSnap.size,
-        upcomingSchedules: scheduleSnap.data().count
+        pendingReviews: totalPending,
+        upcomingSchedules: pendingSessionsSnap.size // Reuse for visibility
       });
     } catch (error) {
       console.error(error);

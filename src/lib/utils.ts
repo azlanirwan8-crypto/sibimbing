@@ -5,10 +5,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatDate(date: string | Date) {
+export function formatDate(date: any) {
+  if (!date) return '-';
+  const d = date.toDate ? date.toDate() : new Date(date);
   return new Intl.DateTimeFormat("id-ID", {
     dateStyle: "long",
-  }).format(new Date(date));
+  }).format(d);
+}
+
+export function safeToDate(date: any): Date {
+  if (!date) return new Date();
+  if (date.toDate) return date.toDate();
+  return new Date(date);
 }
 
 export interface FirestoreErrorInfo {

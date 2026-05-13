@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
-import { collection, query, getDocs, deleteDoc, doc, setDoc, writeBatch, getDocsFromServer } from 'firebase/firestore';
+import { collection, query, getDocs, deleteDoc, doc, setDoc, writeBatch, getDocsFromServer, where } from 'firebase/firestore';
 import { 
   Users, 
   Download, 
@@ -16,13 +16,15 @@ import {
   X,
   FileUp,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  History
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import ProfileUpdate from './ProfileUpdate';
+import StudentHistory from './StudentHistory';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -35,6 +37,7 @@ export default function StudentManagement() {
   const [isImporting, setIsImporting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedStudentNim, setSelectedStudentNim] = useState<string | null>(null);
+  const [historyStudent, setHistoryStudent] = useState<{nim: string, name: string} | null>(null);
 
   useEffect(() => {
     fetchStudents();
@@ -94,7 +97,7 @@ export default function StudentManagement() {
 
         const nimKey = getMappedKey(['nim', 'nomorinduk', 'idmahasiswa']);
         const nameKey = getMappedKey(['nama', 'fullname', 'name', 'lengkap']);
-        const titleKey = getMappedKey(['judul', 'title', 'skripsi', 'penelitian']);
+        const titleKey = getMappedKey(['judul', 'title', 'dokumen', 'penelitian']);
         const fieldKey = getMappedKey(['bidang', 'field', 'research']);
         const univKey = getMappedKey(['pt', 'kampus', 'universitas', 'university', 'ptn', 'pts']);
 
@@ -168,6 +171,35 @@ export default function StudentManagement() {
     toast.success("Data berhasil diekspor ke Excel");
   };
 
+  const handleDeleteStudent = async (nim: string, name: string) => {
+    if (!window.confirm(`Hapus mahasiswa ${name} dan semua riwayat bimbingannya? Tindakan ini tidak dapat dibatalkan.`)) return;
+
+    try {
+      const batch = writeBatch(db);
+      
+      // 1. Delete student doc
+      batch.delete(doc(db, 'students', nim));
+      
+      // 2. Find and delete related guidance records
+      const guidanceQ = query(collection(db, 'guidance_records'), where('studentNim', '==', nim));
+      const guidanceSnap = await getDocs(guidanceQ);
+      guidanceSnap.docs.forEach(d => batch.delete(d.ref));
+      
+      // 3. Find and delete related meeting sessions
+      const sessionQ = query(collection(db, 'meeting_sessions'), where('studentNim', '==', nim));
+      const sessionSnap = await getDocs(sessionQ);
+      sessionSnap.docs.forEach(d => batch.delete(d.ref));
+      
+      await batch.commit();
+      
+      toast.success(`Berhasil menghapus mahasiswa ${name} dan data terkait.`);
+      fetchStudents();
+    } catch (error) {
+      console.error("Delete Error:", error);
+      toast.error("Gagal menghapus data mahasiswa");
+    }
+  };
+
   const filteredStudents = students.filter(s => 
     s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
     s.nim.includes(searchTerm)
@@ -229,6 +261,7 @@ export default function StudentManagement() {
               <tr className="bg-slate-50 border-b border-slate-200 uppercase font-black">
                 <th className="px-6 py-4 text-[10px] text-slate-500 tracking-widest italic">NIM</th>
                 <th className="px-6 py-4 text-[10px] text-slate-500 tracking-widest italic">Nama Lengkap</th>
+                <th className="px-6 py-4 text-[10px] text-slate-500 tracking-widest italic text-center">Status Judul</th>
                 <th className="px-6 py-4 text-[10px] text-slate-500 tracking-widest italic text-right">Tahun Ajaran</th>
                 <th className="px-6 py-4 text-[10px] text-slate-500 tracking-widest italic text-right">Aksi</th>
               </tr>
@@ -264,16 +297,55 @@ export default function StudentManagement() {
                         <span className="text-sm font-medium text-slate-700 truncate">{student.fullName}</span>
                       </div>
                     </td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={cn(
+                          "px-2 py-0.5 rounded-full text-[8px] font-black italic uppercase tracking-widest",
+                          student.lastStatus === 'reviewed' ? "bg-emerald-50 text-emerald-500 border border-emerald-100" :
+                          student.lastStatus === 'revision' ? "bg-pink-50 text-pink-500 border border-pink-100" :
+                          student.lastStatus === 'pending' ? "bg-orange-50 text-orange-500 border border-orange-100" :
+                          "bg-slate-50 text-slate-400 border border-slate-100"
+                        )}>
+                          {student.lastStatus || 'BELUM PENGAJUAN'}
+                        </span>
+                        {student.lastStatus === 'reviewed' && (
+                          <div className="flex gap-0.5">
+                            {[1,2,3,4,5,6,7,8].map(i => (
+                              <div key={i} className={cn(
+                                "w-1.5 h-1.5 rounded-full",
+                                (student.sessionCount || 0) >= i ? "bg-indigo-500" : "bg-slate-200"
+                              )} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-6 py-4 text-right">
                       <span className="bg-slate-100 px-2 py-1 rounded-lg text-slate-600 font-bold tracking-tight text-xs uppercase">TA {student.academicYear || '-'}</span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button 
-                        onClick={() => setSelectedStudentNim(student.nim)}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black py-1.5 px-3 rounded-lg shadow-sm transition-all uppercase tracking-tighter"
-                      >
-                        Detail / Edit
-                      </button>
+                      <div className="flex justify-end items-center gap-2">
+                        <button 
+                          onClick={() => setHistoryStudent({nim: student.nim, name: student.fullName})}
+                          className="bg-indigo-50 text-indigo-600 p-1.5 rounded-lg hover:bg-indigo-100 transition-colors"
+                          title="Lihat History Perjalanan"
+                        >
+                          <History size={14} />
+                        </button>
+                        <button 
+                          onClick={() => setSelectedStudentNim(student.nim)}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black py-1.5 px-3 rounded-lg shadow-sm transition-all uppercase tracking-tighter"
+                        >
+                          Detail / Edit
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteStudent(student.nim, student.fullName)}
+                          className="bg-pink-50 text-pink-600 p-1.5 rounded-lg hover:bg-pink-100 transition-colors"
+                          title="Hapus Mahasiswa"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -403,6 +475,13 @@ export default function StudentManagement() {
       </AnimatePresence>
       {/* Detail / Update Password Modal */}
       <AnimatePresence>
+        {historyStudent && (
+          <StudentHistory 
+            nim={historyStudent.nim} 
+            name={historyStudent.name} 
+            onClose={() => setHistoryStudent(null)} 
+          />
+        )}
         {selectedStudentNim && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
@@ -416,7 +495,8 @@ export default function StudentManagement() {
               <ProfileUpdate 
                 nim={selectedStudentNim} 
                 isModal={true}
-                onlyPassword={true}
+                onlyPassword={false}
+                isAdmin={true}
                 onComplete={() => {
                   setSelectedStudentNim(null);
                   fetchStudents();
